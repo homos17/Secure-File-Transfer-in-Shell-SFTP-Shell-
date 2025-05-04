@@ -14,6 +14,11 @@ This project aims to provide a **minimal, secure, and easy-to-use** command-line
 - Be lightweight and run on most UNIX-based systems without dependencies on heavy software.
 
 ---
+## Team Members
+
+- Mohamed Wael 
+- Eslaam Ibrahim 
+- Malak Ali 
 
 ## 🔒 Security Approach
 
