@@ -2,158 +2,235 @@
 
 # Function to choose operation: upload or download
 choose_operation() {
-  echo "Secure File Sharing System"
-  echo "-------------------------"
-  echo "1. Upload file"
-  echo "2. Download file"
-  read -p "Enter option [1/2]: " operation_option
+    operation=$(zenity --list --title="Secure File Sharing System" \
+                       --text="Choose operation:" \
+                       --column="Key" --column="Operation" --hide-column=1 \
+                       1 "Upload file" 2 "Download file")
+    if [ -z "$operation" ]; then
+        zenity --error --text="Operation cancelled."
+        exit 1
+    fi
 
-  case "$operation_option" in
-    1) choose_encryption "upload" ;;
-    2) download_file ;;
-    *) echo "Invalid option."; exit 1 ;;
-  esac
+    case "$operation" in
+        1) choose_encryption "upload" ;;
+        2) download_file ;;
+        *) zenity --error --text="Invalid option."; exit 1 ;;
+    esac
 }
 
 # Function to choose encryption/decryption type
 choose_encryption() {
-  operation=$1
-  echo "Choose encryption type:"
-  echo "1. Symmetric (AES-256-CBC with OpenSSL)"
-  echo "2. Asymmetric (GPG)"
-  read -p "Enter option [1/2]: " enc_option
+    operation=$1
+    enc_option=$(zenity --list --title="Encryption Type" \
+                        --text="Choose encryption type:" \
+                        --column="Key" --column="Type" --hide-column=1 \
+                        1 "Symmetric (AES-256-CBC with OpenSSL)" 2 "Asymmetric (GPG)")
+    if [ -z "$enc_option" ]; then
+        zenity --error --text="Operation cancelled."
+        exit 1
+    fi
 
-  case "$enc_option" in
-    1) if [ "$operation" == "upload" ]; then
-         encrypt_symmetric
-       else
-         decrypt_symmetric
-       fi ;;
-    2) if [ "$operation" == "upload" ]; then
-         encrypt_asymmetric
-       else
-         decrypt_asymmetric
-       fi ;;
-    *) echo "Invalid encryption option."; exit 1 ;;
-  esac
+    case "$enc_option" in
+        1) if [ "$operation" == "upload" ]; then
+               encrypt_symmetric
+           else
+               decrypt_symmetric "$file_to_decrypt"
+           fi ;;
+        2) if [ "$operation" == "upload" ]; then
+               encrypt_asymmetric
+           else
+               decrypt_asymmetric "$file_to_decrypt"
+           fi ;;
+        *) zenity --error --text="Invalid encryption option."; exit 1 ;;
+    esac
 }
 
-# Function to encrypt file symmetrically with secure password handling
+# Function to encrypt file symmetrically
 encrypt_symmetric() {
-  read -p "Enter file to encrypt: " infile
-  if [ ! -f "$infile" ]; then
-    echo "Error: File does not exist."
-    exit 1
-  fi
-  read -p "Enter output filename (e.g., $infile.enc): " outfile
-  read -s -p "Enter password for encryption: " password
-  echo
-  tmpfile=$(mktemp)
-  echo "$password" > "$tmpfile"
-  openssl enc -aes-256-cbc -salt -in "$infile" -out "$outfile" -pass file:"$tmpfile"
-  if [ $? -eq 0 ]; then
-    echo "Encryption successful: $outfile created."
-    rm "$tmpfile"
-    choose_transfer "$outfile"
-  else
-    echo "Encryption failed."
-    rm "$tmpfile"
-    exit 1
-  fi
+    infile=$(zenity --file-selection --title="Select file to encrypt")
+    if [ -z "$infile" ]; then
+        zenity --error --text="Operation cancelled."
+        exit 1
+    fi
+    if [ ! -f "$infile" ]; then
+        zenity --error --text="Error: File does not exist."
+        exit 1
+    fi
+
+    outfile=$(zenity --file-selection --save --title="Save encrypted file as" \
+                     --filename="$infile.enc")
+    if [ -z "$outfile" ]; then
+        zenity --error --text="Operation cancelled."
+        exit 1
+    fi
+
+    password=$(zenity --password --title="Enter password for encryption")
+    if [ -z "$password" ]; then
+        zenity --error --text="Operation cancelled."
+        exit 1
+    fi
+
+    tmpfile=$(mktemp)
+    echo "$password" > "$tmpfile"
+    openssl enc -aes-256-cbc -salt -in "$infile" -out "$outfile" -pass file:"$tmpfile"
+    if [ $? -eq 0 ]; then
+        zenity --info --text="Encryption successful: $outfile created."
+        rm "$tmpfile"
+        choose_transfer "$outfile"
+    else
+        zenity --error --text="Encryption failed."
+        rm "$tmpfile"
+        exit 1
+    fi
 }
 
 # Function to encrypt file asymmetrically
 encrypt_asymmetric() {
-  read -p "Enter file to encrypt: " infile
-  if [ ! -f "$infile" ]; then
-    echo "Error: File does not exist."
-    exit 1
-  fi
-  read -p "Enter GPG recipient (e.g., user@example.com or key ID): " recipient
-  gpg --output "$infile.gpg" --encrypt --recipient "$recipient" "$infile"
-  if [ $? -eq 0 ]; then
-    echo "Encryption successful: $infile.gpg created."
-    choose_transfer "$infile.gpg"
-  else
-    echo "Encryption failed. Ensure recipient's key is available."
-    exit 1
-  fi
+    infile=$(zenity --file-selection --title="Select file to encrypt")
+    if [ -z "$infile" ]; then
+        zenity --error --text="Operation cancelled."
+        exit 1
+    fi
+    if [ ! -f "$infile" ]; then
+        zenity --error --text="Error: File does not exist."
+        exit 1
+    fi
+
+    recipient=$(zenity --entry --title="GPG Recipient" \
+                       --text="Enter GPG recipient (e.g., user@example.com or key ID):")
+    if [ -z "$recipient" ]; then
+        zenity --error --text="Operation cancelled."
+        exit 1
+    fi
+
+    outfile="$infile.gpg"
+    gpg --output "$outfile" --encrypt --recipient "$recipient" "$infile"
+    if [ $? -eq 0 ]; then
+        zenity --info --text="Encryption successful: $outfile created."
+        choose_transfer "$outfile"
+    else
+        zenity --error --text="Encryption failed. Ensure recipient's key is available."
+        exit 1
+    fi
 }
 
 # Function to choose transfer method
 choose_transfer() {
-  filename=$1
-  echo "Choose transfer method:"
-  echo "1. SCP (Secure Copy)"
-  echo "2. RSYNC (Remote Sync)"
-  read -p "Enter option [1/2]: " transfer_option
-  read -p "Enter remote destination (user@host:/path): " destination
+    filename=$1
+    transfer_option=$(zenity --list --title="Transfer Method" \
+                             --text="Choose transfer method:" \
+                             --column="Key" --column="Method" --hide-column=1 \
+                             1 "SCP (Secure Copy)" 2 "RSYNC (Remote Sync)")
+    if [ -z "$transfer_option" ]; then
+        zenity --error --text="Operation cancelled."
+        exit 1
+    fi
 
-  case "$transfer_option" in
-    1) scp "$filename" "$destination" ;;
-    2) rsync -av "$filename" "$destination" ;;
-    *) echo "Invalid transfer option."; exit 1 ;;
-  esac
+    destination=$(zenity --entry --title="Remote Destination" \
+                         --text="Enter remote destination (user@host:/path):")
+    if [ -z "$destination" ]; then
+        zenity --error --text="Operation cancelled."
+        exit 1
+    fi
 
-  if [ $? -eq 0 ]; then
-    echo "File transferred successfully to $destination."
-  else
-    echo "File transfer failed. Check SSH configuration."
-    exit 1
-  fi
+    case "$transfer_option" in
+        1) scp "$filename" "$destination" ;;
+        2) rsync -av "$filename" "$destination" ;;
+        *) zenity --error --text="Invalid transfer option."; exit 1 ;;
+    esac
+
+    if [ $? -eq 0 ]; then
+        zenity --info --text="File transferred successfully to $destination."
+    else
+        zenity --error --text="File transfer failed. Check SSH configuration."
+        exit 1
+    fi
 }
 
 # Function to download file
 download_file() {
-  read -p "Enter remote file (e.g., user@host:/path/to/file): " remote_file
-  read -p "Enter local filename to save: " local_file
-  scp "$remote_file" "$local_file"
-  if [ $? -eq 0 ]; then
-    echo "File downloaded successfully as $local_file."
-    choose_encryption "download"
-  else
-    echo "Download failed. Check remote path or SSH access."
-    exit 1
-  fi
+    remote_file=$(zenity --entry --title="Remote File" \
+                         --text="Enter remote file (e.g., user@host:/path/to/file):")
+    if [ -z "$remote_file" ]; then
+        zenity --error --text="Operation cancelled."
+        exit 1
+    fi
+
+    local_file=$(zenity --file-selection --save --title="Save downloaded file as")
+    if [ -z "$local_file" ]; then
+        zenity --error --text="Operation cancelled."
+        exit 1
+    fi
+
+    scp "$remote_file" "$local_file"
+    if [ $? -eq 0 ]; then
+        zenity --info --text="File downloaded successfully as $local_file."
+        if zenity --question --text="Do you want to decrypt the downloaded file?"; then
+            file_to_decrypt="$local_file"
+            choose_encryption "download"
+        fi
+    else
+        zenity --error --text="Download failed. Check remote path or SSH access."
+        exit 1
+    fi
 }
 
 # Function to decrypt file symmetrically
 decrypt_symmetric() {
-  read -p "Enter encrypted file: " encf
-  if [ ! -f "$encf" ]; then
-    echo "Error: File does not exist."
-    exit 1
-  fi
-  read -p "Enter output filename: " outf
-  read -s -p "Enter password for decryption: " password
-  echo
-  tmpfile=$(mktemp)
-  echo "$password" > "$tmpfile"
-  openssl enc -d -aes-256-cbc -in "$encf" -out "$outf" -pass file:"$tmpfile"
-  if [ $? -eq 0 ]; then
-    echo "Decryption successful: $outf created."
-    rm "$tmpfile"
-  else
-    echo "Decryption failed. Wrong password or corrupted file."
-    rm "$tmpfile"
-    exit 1
-  fi
+    encf=$1
+    if [ ! -f "$encf" ]; then
+        zenity --error --text="Error: File does not exist."
+        exit 1
+    fi
+
+    outf=$(zenity --file-selection --save --title="Save decrypted file as" \
+                  --filename="${encf%.enc}")
+    if [ -z "$outf" ]; then
+        zenity --error --text="Operation cancelled."
+        exit 1
+    fi
+
+    password=$(zenity --password --title="Enter password for decryption")
+    if [ -z "$password" ]; then
+        zenity --error --text="Operation cancelled."
+        exit 1
+    fi
+
+    tmpfile=$(mktemp)
+    echo "$password" > "$tmpfile"
+    openssl enc -d -aes-256-cbc -in "$encf" -out "$outf" -pass file:"$tmpfile"
+    if [ $? -eq 0 ]; then
+        zenity --info --text="Decryption successful: $outf created."
+        rm "$tmpfile"
+    else
+        zenity --error --text="Decryption failed. Wrong password or corrupted file."
+        rm "$tmpfile"
+        exit 1
+    fi
 }
 
 # Function to decrypt file asymmetrically
 decrypt_asymmetric() {
-  read -p "Enter .gpg file: " gpgf
-  if [ ! -f "$gpgf" ]; then
-    echo "Error: File does not exist."
-    exit 1
-  fi
-  gpg --output "${gpgf%.gpg}" --decrypt "$gpgf"
-  if [ $? -eq 0 ]; then
-    echo "Decryption successful: ${gpgf%.gpg} created."
-  else
-    echo "Decryption failed. Check GPG key or passphrase."
-    exit 1
-  fi
+    gpgf=$1
+    if [ ! -f "$gpgf" ]; then
+        zenity --error --text="Error: File does not exist."
+        exit 1
+    fi
+
+    outf=$(zenity --file-selection --save --title="Save decrypted file as" \
+                  --filename="${gpgf%.gpg}")
+    if [ -z "$outf" ]; then
+        zenity --error --text="Operation cancelled."
+        exit 1
+    fi
+
+    gpg --output "$outf" --decrypt "$gpgf"
+    if [ $? -eq 0 ]; then
+        zenity --info --text="Decryption successful: $outf created."
+    else
+        zenity --error --text="Decryption failed. Check GPG key or passphrase."
+        exit 1
+    fi
 }
 
 # Start the script

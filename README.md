@@ -90,13 +90,13 @@ cd secure-file-transfer-shell
 ### 2. Make the script executable
 
 ```bash
-chmod +x secure_transfer.sh
+chmod +x SFTP.sh
 ```
 
 ### 3. Run the script
 
 ```bash
-./secure_transfer.sh
+./SFTP.sh
 ```
 
 Follow the menu instructions interactively.
@@ -106,7 +106,7 @@ Follow the menu instructions interactively.
 ## 🧪 Example: Uploading with AES
 
 ```bash
-./secure_transfer.sh
+./SFTP.sh
 ```
 
 Follow prompts:
